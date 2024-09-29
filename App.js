@@ -15,45 +15,49 @@ import Post from './Apps/Post'
 import PostDetails from './Apps/PostDetails';
 import Community from './Apps/Community';
 import { useEffect } from 'react';
+import * as SecureStore from 'expo-secure-store'; 
 
+import { createNavigationContainerRef } from '@react-navigation/native';
+const navigationRef = createNavigationContainerRef();
 
 const Stack = createStackNavigator();
 
 const App = () => {
   const checkAutoLogin = async () => {
-    const token = await EncryptedStorage.getItem('access_token');
-  
-    if (token) {
-      try {
+    try {
+      const token = await SecureStore.getItemAsync('access_token'); // Retrieve the token
+
+      if (token) {
+        // Verify token with the backend to check its validity
         const response = await fetch('http://localhost:3000/login/verify-token', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
+            'Content-Type': 'application/json',
+          },
         });
-  
+
         if (response.ok) {
-          navigation.navigate('Main'); // If token is valid, skip login
+          navigationRef.navigate('Main'); // Navigate to Main if token is valid
         } else {
-          navigation.navigate('Login'); // If token is invalid, show login
+          navigationRef.navigate('Login'); // Invalid token, navigate to login
         }
-      } catch (error) {
-        console.error('Error verifying token:', error);
-        navigation.navigate('Login'); // Show login on error
+      } else {
+        navigationRef.navigate('Login'); // No token found, navigate to login
       }
-    } else {
-      navigation.navigate('Login'); // No token, show login
+    } catch (error) {
+      console.error('Error verifying token:', error);
+      navigationRef.navigate('Login'); // On error, navigate to login
     }
   };
-  
+
   useEffect(() => {
-    checkAutoLogin();
+    checkAutoLogin(); // Check for token when app starts
   }, []);
   
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator initialRouteName="Login">
         <Stack.Screen
           name="Login"
