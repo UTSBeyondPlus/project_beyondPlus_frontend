@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { differenceInWeeks, format } from 'date-fns';
 import { ProgressBar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import moment from 'moment-timezone';
 
 
@@ -104,6 +105,7 @@ const CustomHeader = ({ currentDate, selectedDay, onDayPress }) => {
 
 const ScheduleScreen = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
+  
   const { currentDate, currentWeek, isDatePickerVisible, isMonthPickerVisible, isModalVisible, selectedMonth, events, setEvents, newEvent } = state;
   const [isEventModalVisible, setEventModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState([]);
@@ -112,7 +114,30 @@ const ScheduleScreen = () => {
   const semesterStartDate = getSydneyDate(new Date('2024-07-01'));
   const totalWeeks = 12;
   const [selectedDay, setSelectedDay] = useState(currentDate);
+  const [storedToken, setStoredToken] = useState(null); // 상태 정의
+
+
+
+  // 토큰 불러오기 함수
+  const getToken = async () => {
+    try {
+      const token = await SecureStore.getItemAsync('access_token');
+      setStoredToken(token);
+      console.log('Retrieved token:', token);
+      return token;
+    } catch (error) {
+      console.error('Error retrieving token:', error);
+      return null;
+    }
+  };
+
+
+  
+
+
   useEffect(() => {
+    getToken();
+
     const sydneyToday = moment.tz('Australia/Sydney').startOf('day');
     const sydneyCurrent = moment(currentDate).tz('Australia/Sydney').startOf('day');
     const lastDayOfMonth = sydneyCurrent.clone().endOf('month').date();
@@ -216,12 +241,16 @@ const ScheduleScreen = () => {
   // Handle submitting the new event
   const handleAddEvent = async () => {
     const { title, day, startTime, endTime, location } = newEvent;
+    const userEmail = await SecureStore.getItemAsync("user_email"); // user_email을 가져옴
+    
     if (title && day && startTime && endTime && location) {
+      
       const newEventObj = {
+        email: userEmail,
         title,
         day: day.toUpperCase(),
-        startTime: genTimeBlock(day.toUpperCase(), parseInt(startTime)),
-        endTime: genTimeBlock(day.toUpperCase(), parseInt(endTime)),
+        startTime: parseInt(startTime),
+        endTime: parseInt(endTime),
         location,
         extra_descriptions: [],
         color: '#f8bbd0',
@@ -230,35 +259,59 @@ const ScheduleScreen = () => {
   
       try {
         // Make a POST request to your backend to store the event in the database
-        const response = await fetch('http://localhost:3000/api/events', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(newEventObj),
-        });
-  
+        const response = await fetch(
+          "http://localhost:3000/timetables/create",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${storedToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(newEventObj),
+          }
+        );
+
         if (response.ok) {
-          // If the request was successful, add the event to the local state as well
-          setEvents([...events, newEventObj]);
-          setModalVisible(false);
-          setNewEvent({
+          const responseText = await response.text();
+          console.log('서버 응답:', responseText);
+  
+          let result;
+          try {
+            result = JSON.parse(responseText);
+          } catch (parseError) {
+            console.log('JSON 파싱 오류:', parseError);
+            console.log('파싱 실패한 응답:', responseText);
+            result = { message: responseText };
+          }
+  
+          console.log('이벤트가 성공적으로 추가되었습니다:', result);
+  
+          const formattedNewEvent = {
+            ...newEventObj,
+            startTime: genTimeBlock(newEventObj.day, newEventObj.startTime),
+            endTime: genTimeBlock(newEventObj.day, newEventObj.endTime),
+          };
+  
+          dispatch({ type: 'ADD_EVENT', payload: formattedNewEvent });
+          dispatch({ type: 'TOGGLE_MODAL' });
+          dispatch({ type: 'SET_NEW_EVENT', payload: {
             title: '',
             day: '',
             startTime: '',
             endTime: '',
             location: '',
-          });
+          }});
         } else {
-          // Handle error responses
-          Alert.alert('Error', 'Failed to add event. Please try again.');
+          const errorText = await response.text();
+          console.log('서버 오류:', errorText);
+          Alert.alert('오류', '이벤트 추가에 실패했습니다. 다시 시도해주세요.');
         }
       } catch (error) {
-        // Handle network or other errors
-        Alert.alert('Generated new event!');
+        console.log('네트워크 오류:', error);
+        Alert.alert('오류', `이벤트 추가 실패: ${error.message || "예기치 못한 오류가 발생했습니다."}`);
       }
     } else {
-      Alert.alert('Error', 'Please fill in all fields.');
+      Alert.alert('오류', '모든 필드를 채워주세요.');
     }
   };
   
@@ -272,6 +325,14 @@ const ScheduleScreen = () => {
     navigation.navigate('Review');
   };
   
+  // TimeTableView 컴포넌트 사용 부분
+  const formattedEvents = events.map(event => ({
+    ...event,
+    startTime: genTimeBlock(event.day, event.startTime),
+    endTime: genTimeBlock(event.day, event.endTime)
+  }));
+
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.container}>
@@ -411,7 +472,7 @@ const ScheduleScreen = () => {
           onDayPress={handleDayPress}
         />
         <TimeTableView
-            events={events}
+            events={formattedEvents}
             pivotTime={9}
             pivotEndTime={20}
             pivotDate={genTimeBlock('mon')}
@@ -427,7 +488,7 @@ const ScheduleScreen = () => {
             <Ionicons name="calendar" size={24} color="white" />
             <Text style={styles.navText}>Schedule</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Community')}>
+          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Review')}>
             <Ionicons name="search" size={24} color="white" />
             <Text style={styles.navText}>Post</Text>
           </TouchableOpacity>

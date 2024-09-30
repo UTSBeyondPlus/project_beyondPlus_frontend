@@ -5,8 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import Login from './Apps/login';
 import Main from './Apps/Main';
 import SignIn from './Apps/signin'; 
-import Review from './Apps/Review/Review';
-import ReviewDetails from './Apps/Review/ReviewDetails';
+import Review from './Apps/Review';
 import Account from './Apps/Account';
 import Activity from './Apps/Accounts/Activity';
 import Help from './Apps/Accounts/Help'
@@ -100,11 +99,7 @@ const App = () => {
           component={Community}
           options={{ headerShown: false }}  
          />
-         <Stack.Screen 
-          name="ReviewDetails" 
-          component={ReviewDetails}
-          options={{ headerShown: false }}  
-         />
+         
         <Stack.Screen name="Activity" component={Activity} />
         <Stack.Screen name="Settings" component={Settings} />
         <Stack.Screen name="Help" component={Help} />
