@@ -62,6 +62,8 @@ function reducer(state, action) {
       return { ...state, events: [...state.events, action.payload], isModalVisible: false, newEvent: initialState.newEvent };
     case 'SET_SELECTED_DAY':
       return { ...state, selectedDay: action.payload };
+    case 'SET_EVENTS':
+      return { ...state, events: action.payload };
     default:
       return state;
   }
@@ -105,17 +107,14 @@ const CustomHeader = ({ currentDate, selectedDay, onDayPress }) => {
 
 const ScheduleScreen = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
-  
   const { currentDate, currentWeek, isDatePickerVisible, isMonthPickerVisible, isModalVisible, selectedMonth, events, setEvents, newEvent } = state;
   const [isEventModalVisible, setEventModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState([]);
-  
   const navigation = useNavigation();
   const semesterStartDate = getSydneyDate(new Date('2024-07-01'));
   const totalWeeks = 12;
   const [selectedDay, setSelectedDay] = useState(currentDate);
   const [storedToken, setStoredToken] = useState(null); // 상태 정의
-
 
 
   // 토큰 불러오기 함수
@@ -131,14 +130,12 @@ const ScheduleScreen = () => {
     }
   };
 
-
-  
-
-
+  // useEffect 함수 
   useEffect(() => {
     getToken();
 
-    const sydneyToday = moment.tz('Australia/Sydney').startOf('day');
+    fetchEventsFromDatabase();
+
     const sydneyCurrent = moment(currentDate).tz('Australia/Sydney').startOf('day');
     const lastDayOfMonth = sydneyCurrent.clone().endOf('month').date();
     const currentWeek = calculateCurrentWeek(semesterStartDate, sydneyCurrent.toDate());
@@ -175,29 +172,13 @@ const ScheduleScreen = () => {
     dispatch({ type: 'SET_MONTH', payload: months[today.getMonth()] });
   };
 
-  // const handleAddEvent = () => {
-  //   const { title, day, startTime, endTime, location } = newEvent;
-  //   if (title && day && startTime && endTime && location) {
-  //     const newEventObj = {
-  //       title,
-  //       startTime: genTimeBlock(day.toUpperCase(), parseInt(startTime)),
-  //       endTime: genTimeBlock(day.toUpperCase(), parseInt(endTime)),
-  //       location,
-  //       extra_descriptions: [],
-  //       color: '#f8bbd0',
-  //     };
-  //     dispatch({ type: 'ADD_EVENT', payload: newEventObj });
-  //   } else {
-  //     Alert.alert("Error", "Please fill in all fields.");
-  //   }
-  // };
-
-
+  // 이벤트 모달 닫기 함수
   const handleCloseEventModal =() => {
     setEventModalVisible(false);
     setSelectedEvent(null);
   }
 
+  // 이벤트 삭제 함수
   const handleDeleteEvent = () => {
     Alert.alert(
       "Delete Event",
@@ -236,9 +217,71 @@ const ScheduleScreen = () => {
       ]
     );
   };
-  
 
-  // Handle submitting the new event
+
+  // 데이터베이스에서 이벤트 가져오기
+  const fetchEventsFromDatabase = async () => {
+    try {
+      const userEmail = await SecureStore.getItemAsync("user_email");
+      const token = await getToken();
+      
+      console.log('Fetching events for email:', userEmail);
+      console.log('Token:', token);
+  
+      if (!token) {
+        console.error('토큰이 없습니다.');
+        return;
+      }
+  
+      const response = await fetch(
+        `http://localhost:3000/timetables/${userEmail}`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+  
+      console.log('Response status:', response.status);
+      const responseText = await response.text();
+      console.log('Response text:', responseText);
+  
+      if (response.ok) {
+        const events = JSON.parse(responseText);
+        console.log('Parsed events:', events);
+  
+        const formattedEvents = events.map(event => ({
+          email: event.user_email,
+          title: event.title,
+          day: event.day.toUpperCase(),
+          startTime: genTimeBlock(event.day, parseInt(event.starttime)),
+          endTime: genTimeBlock(event.day, parseInt(event.endtime)),
+          location: event.location,
+          extra_descriptions: event.extra_descriptions || [],
+          color: event.color || '#f8bbd0',
+        }));
+        dispatch({ type: 'SET_EVENTS', payload: formattedEvents });
+      } else {
+        console.log('Failed to fetch events', response.statusText);
+        Alert.alert('Error', `Failed to fetch events. Status: ${response.status}`);
+      }
+    } catch (error) {
+      console.log('Network Error:', error);
+      Alert.alert('Error', `Failed to fetch events: ${error.message || "Unexpected error occurred."}`);
+    }
+  };
+
+
+
+
+
+
+
+
+
+  // 이벤트 추가 함수
   const handleAddEvent = async () => {
     const { title, day, startTime, endTime, location } = newEvent;
     const userEmail = await SecureStore.getItemAsync("user_email"); // user_email을 가져옴
@@ -272,28 +315,10 @@ const ScheduleScreen = () => {
         );
 
         if (response.ok) {
-          const responseText = await response.text();
-          console.log('서버 응답:', responseText);
+          const result = await response.json();
+          console.log('Server Response:', result);
   
-          let result;
-          try {
-            result = JSON.parse(responseText);
-          } catch (parseError) {
-            console.log('JSON 파싱 오류:', parseError);
-            console.log('파싱 실패한 응답:', responseText);
-            result = { message: responseText };
-          }
-  
-          console.log('이벤트가 성공적으로 추가되었습니다:', result);
-  
-          const formattedNewEvent = {
-            ...newEventObj,
-            startTime: genTimeBlock(newEventObj.day, newEventObj.startTime),
-            endTime: genTimeBlock(newEventObj.day, newEventObj.endTime),
-          };
-  
-          dispatch({ type: 'ADD_EVENT', payload: formattedNewEvent });
-          dispatch({ type: 'TOGGLE_MODAL' });
+          
           dispatch({ type: 'SET_NEW_EVENT', payload: {
             title: '',
             day: '',
@@ -301,26 +326,32 @@ const ScheduleScreen = () => {
             endTime: '',
             location: '',
           }});
+          Alert.alert('Success', 'Event added successfully');
+
+          fetchEventsFromDatabase();          
+
         } else {
           const errorText = await response.text();
-          console.log('서버 오류:', errorText);
-          Alert.alert('오류', '이벤트 추가에 실패했습니다. 다시 시도해주세요.');
+          console.log('Server Error:', errorText);
+          Alert.alert('Error', 'Failed to add event. Please try again.');
         }
       } catch (error) {
-        console.log('네트워크 오류:', error);
-        Alert.alert('오류', `이벤트 추가 실패: ${error.message || "예기치 못한 오류가 발생했습니다."}`);
+        console.log('Network Error:', error);
+        Alert.alert('Error', `Failed to add event: ${error.message || "Unexpected error occurred."}`);
       }
     } else {
-      Alert.alert('오류', '모든 필드를 채워주세요.');
+      Alert.alert('Error', 'Fill in all fields.');
     }
   };
   
+  // 등록된 이벤트 모달 클릭해서 여는 함수
   const onEventPress = (evt) => {
     //Alert.alert("onEventPress", JSON.stringify(evt));
     setSelectedEvent(evt);
     setEventModalVisible(true);
   };
 
+  // 리뷰 페이지 이동 함수
   const handleReview = () => {
     navigation.navigate('Review');
   };
@@ -334,7 +365,6 @@ const ScheduleScreen = () => {
 
 
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.container}>
         <LinearGradient
           colors={['#2b189e', '#5d4add', '#a38ef9']}
@@ -434,6 +464,7 @@ const ScheduleScreen = () => {
             </View>
           </TouchableWithoutFeedback>
         </Modal>
+
         <Modal
           visible={isEventModalVisible}
           animationType="fade"
@@ -472,7 +503,7 @@ const ScheduleScreen = () => {
           onDayPress={handleDayPress}
         />
         <TimeTableView
-            events={formattedEvents}
+            events={events}
             pivotTime={9}
             pivotEndTime={20}
             pivotDate={genTimeBlock('mon')}
@@ -501,7 +532,6 @@ const ScheduleScreen = () => {
           <Ionicons name="share" size={24} color="white" />
         </TouchableOpacity>
       </View>
-    </TouchableWithoutFeedback>
   );
 };
 
