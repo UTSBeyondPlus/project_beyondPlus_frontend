@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import moment from 'moment-timezone';
 
-
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const initialState = {
@@ -273,77 +272,73 @@ const ScheduleScreen = () => {
     }
   };
 
-
-
-
-
-
-
-
-
-  // 이벤트 추가 함수
   const handleAddEvent = async () => {
     const { title, day, startTime, endTime, location } = newEvent;
-    const userEmail = await SecureStore.getItemAsync("user_email"); // user_email을 가져옴
-    
+    const userEmail = await SecureStore.getItemAsync("user_email");
+  
     if (title && day && startTime && endTime && location) {
-      
-      const newEventObj = {
-        email: userEmail,
-        title,
-        day: day.toUpperCase(),
-        startTime: parseInt(startTime),
-        endTime: parseInt(endTime),
-        location,
-        extra_descriptions: [],
-        color: '#f8bbd0',
-      };
-      dispatch({ type: 'ADD_EVENT', payload: newEventObj });
+      const days = day.split(',').map(d => d.trim().toUpperCase());
+      let conflictFound = false;
   
-      try {
-        // Make a POST request to your backend to store the event in the database
-        const response = await fetch(
-          "http://localhost:3000/timetables/create",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${storedToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(newEventObj),
+      for (const singleDay of days) {
+        const newEventObj = {
+          email: userEmail,
+          title,
+          day: singleDay,
+          startTime: parseInt(startTime),
+          endTime: parseInt(endTime),
+          location,
+          extra_descriptions: [],
+          color: '#f8bbd0',
+        };
+  
+        try {
+          const response = await fetch(
+            "http://localhost:3000/timetables/create",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${storedToken}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(newEventObj),
+            }
+          );
+  
+          if (response.status === 409) {
+            conflictFound = true;
+            Alert.alert('시간표 충돌', `${singleDay}요일 ${startTime}:00~${endTime}:00에 이미 일정이 있습니다.`);
+            break;
+          } else if (!response.ok) {
+            const errorText = await response.text();
+            console.log('Server Error:', errorText);
+            Alert.alert('Error', `Failed to add event for ${singleDay}. Please try again.`);
+            return;
           }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log('Server Response:', result);
-  
-          
-          dispatch({ type: 'SET_NEW_EVENT', payload: {
-            title: '',
-            day: '',
-            startTime: '',
-            endTime: '',
-            location: '',
-          }});
-          Alert.alert('Success', 'Event added successfully');
-
-          fetchEventsFromDatabase();          
-
-        } else {
-          const errorText = await response.text();
-          console.log('Server Error:', errorText);
-          Alert.alert('Error', 'Failed to add event. Please try again.');
+        } catch (error) {
+          console.log('Network Error:', error);
+          Alert.alert('Error', `Failed to add event for ${singleDay}: ${error.message || "Unexpected error occurred."}`);
+          return;
         }
-      } catch (error) {
-        console.log('Network Error:', error);
-        Alert.alert('Error', `Failed to add event: ${error.message || "Unexpected error occurred."}`);
+      }
+  
+      if (!conflictFound) {
+        dispatch({ type: 'SET_NEW_EVENT', payload: {
+          title: '',
+          day: '',
+          startTime: '',
+          endTime: '',
+          location: '',
+        }});
+        Alert.alert('Success', 'Events added successfully');
+        dispatch({ type: 'TOGGLE_MODAL' });
+        fetchEventsFromDatabase();
       }
     } else {
       Alert.alert('Error', 'Fill in all fields.');
     }
   };
-  
+
   // 등록된 이벤트 모달 클릭해서 여는 함수
   const onEventPress = (evt) => {
     //Alert.alert("onEventPress", JSON.stringify(evt));
@@ -430,7 +425,7 @@ const ScheduleScreen = () => {
                   style={styles.input}
                 />
                 <TextInput
-                  placeholder="Day (e.g., MON)"
+                  placeholder="Day (e.g., MON, WED)"
                   value={newEvent.day}
                   onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { day: text } })}
                   style={styles.input}
