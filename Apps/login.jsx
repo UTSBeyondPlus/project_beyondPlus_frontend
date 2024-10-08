@@ -69,7 +69,7 @@ const Login = () => {
         await SecureStore.setItemAsync('access_token', token);
 
         Alert.alert('Verification Success', 'You have been successfully logged in!');
-        navigation.navigate('Main');
+        navigation.navigate('AcademicInfo');
       } else {
         Alert.alert('Invalid verification code, please try again.');
       }
@@ -102,7 +102,7 @@ const Login = () => {
         await SecureStore.setItemAsync('access_token', token);
   
         Alert.alert('Login Successful', 'You have been successfully logged in!');
-        navigation.navigate('Main');
+        navigation.navigate('AcademicInfo');
       } else {
         Alert.alert('Error', data.message || 'Failed to login. Please try again.');
       }
@@ -120,7 +120,7 @@ const Login = () => {
   };
 
   const main = () => {
-    navigation.navigate('Main');
+    navigation.navigate('AcademicInfo');
   };
 
   const goBackToEmailInput = () => {

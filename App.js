@@ -4,6 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import Login from './Apps/login';
 import Main from './Apps/Main';
+import AcademicInfo from './Apps/AcademicInfo';
 import SignIn from './Apps/signin'; 
 import Review from './Apps/Review/Review';
 import ReviewDetails from './Apps/Review/ReviewDetails';
@@ -39,7 +40,7 @@ const App = () => {
         });
 
         if (response.ok) {
-          navigationRef.navigate('Main'); // Navigate to Main if token is valid
+          navigationRef.navigate('AcademicInfo'); // Navigate to Main if token is valid
         } else {
           navigationRef.navigate('Login'); // Invalid token, navigate to login
         }
@@ -68,6 +69,11 @@ const App = () => {
         <Stack.Screen
           name="Main"
           component={Main}
+          options={{ headerShown: false }}
+        />
+         <Stack.Screen
+          name="AcademicInfo"
+          component={AcademicInfo}
           options={{ headerShown: false }}
         />
         <Stack.Screen
