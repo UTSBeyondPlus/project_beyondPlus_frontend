@@ -3,7 +3,6 @@ import { StyleSheet, Text, View, TextInput, TouchableOpacity, Modal, FlatList, A
 import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { RadioButton } from 'react-native-paper';  // react-native-paper 라이브러리 추가 필요
 
 const AcademicInfo = () => {
   const navigation = useNavigation();
@@ -122,30 +121,46 @@ const AcademicInfo = () => {
     )
   );
 
-  const handleSessionSelect = (selectedSession) => {
-    setSession(selectedSession);
-    if (selectedSession === 'Autumn') {
-      setSessionDates({
-        startDate: '2024-02-19 Monday',
-        endDate: 'Friday 17 May 2024'
-      });
-    } else if (selectedSession === 'Spring') {
-      setSessionDates({
-        startDate: 'Monday 5 August 2024',
-        endDate: 'Friday 1 November 2024'
-      });
+  const getSessionDates = (session) => {
+    if (session === 'Autumn') {
+      return {
+        startDate: '2024-02-19',
+        endDate: '2024-05-17'
+      };
+    } else if (session === 'Spring') {
+      return {
+        startDate: '2024-08-05',
+        endDate: '2024-11-01'
+      };
     }
+    return null;
   };
-
+  
+  const handleSessionSelect = (selectedSession) => {
+    setCurrentSession(selectedSession);
+  };
+  
   const handleSave = () => {
-    if (!major || !enrollmentDate || !graduationDate || !session) {
+    if (!major || !enrollmentDate || !graduationDate || !currentSession) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    // Here you would typically save the data to your backend or local storage
-    console.log('Saving academic info:', { major, enrollmentDate, graduationDate, session, sessionDates });
+    
+    const sessionDates = getSessionDates(currentSession);
+    const academicInfo = {
+      major,
+      enrollmentDate: enrollmentDate.toISOString().split('T')[0], // YYYY-MM-DD 형식으로 변환
+      graduationDate: graduationDate.toISOString().split('T')[0], // YYYY-MM-DD 형식으로 변환
+      currentSession,
+      sessionStartDate: sessionDates.startDate,
+      sessionEndDate: sessionDates.endDate
+    };
+  
+    console.log('Save Academic Info:', academicInfo);
+    // 여기서 academicInfo를 DB에 저장하는 로직을 추가가능
     navigation.navigate('Main');
   };
+
 
   return (
     <LinearGradient
@@ -232,18 +247,17 @@ const AcademicInfo = () => {
         {renderDatePicker(enrollmentDate, handleEnrollmentDateChange, showEnrollmentPicker, hideEnrollmentDatePicker, formatEnrollmentDate)}
         {renderDatePicker(graduationDate, handleGraduationDateChange, showGraduationPicker, hideGraduationDatePicker, formatGraduationDate, 'date')}
 
-
         {/* Current Session 선택 */}
         <View style={styles.inputWrapper}>
           <View style={styles.inputRow}>
             <View style={styles.label}>
-              <Text style={styles.labelText}>Current Session:</Text>
+              <Text style={styles.labelText}>현재 학기:</Text>
             </View>
             <View style={styles.inputContainer}>
               <View style={styles.radioGroup}>
                 <TouchableOpacity
                   style={styles.radioButton}
-                  onPress={() => setCurrentSession('Autumn')}
+                  onPress={() => handleSessionSelect('Autumn')}
                 >
                   <View style={styles.radio}>
                     {currentSession === 'Autumn' && <View style={styles.radioInner} />}
@@ -252,7 +266,7 @@ const AcademicInfo = () => {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.radioButton}
-                  onPress={() => setCurrentSession('Spring')}
+                  onPress={() => handleSessionSelect('Spring')}
                 >
                   <View style={styles.radio}>
                     {currentSession === 'Spring' && <View style={styles.radioInner} />}
