@@ -29,7 +29,7 @@ const App = () => {
 
       if (token) {
         // Verify token with the backend to check its validity
-        const response = await fetch('http://localhost:3000/login/verify-token', {
+        const response = await fetch('http://3.26.235.216:3000/login/verify-token', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,

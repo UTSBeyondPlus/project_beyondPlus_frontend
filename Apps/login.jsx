@@ -13,11 +13,13 @@ const Login = () => {
   const [codeSent, setCodeSent] = useState(false);
   const inputs = useRef([]);
 
+  const serverUrl = 'http://3.26.235.216:3000';
+
   const sendVerificationCode = async () => {
     if (emailPrefix) {
       const email = `${emailPrefix}@student.uts.edu.au`;
       try {
-        const response = await fetch('http://localhost:3000/login/signup', {
+        const response = await fetch('{}/signup', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -53,7 +55,7 @@ const Login = () => {
     const password = "1234";
     console.log(verificationCode);
     try {
-      const response = await fetch('http://localhost:3000/login/verify', {
+      const response = await fetch(`${serverUrl}/login/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -67,6 +69,7 @@ const Login = () => {
 
         // Store token securely using SecureStore
         await SecureStore.setItemAsync('access_token', token);
+        await SecureStore.setItemAsync('user_email', email);
 
         Alert.alert('Verification Success', 'You have been successfully logged in!');
         navigation.navigate('Main');
@@ -84,7 +87,7 @@ const Login = () => {
     const password = "1234"; // Change this to collect a password input if needed
   
     try {
-      const response = await fetch('http://localhost:3000/login', {
+      const response = await fetch(`${serverUrl}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -97,10 +100,10 @@ const Login = () => {
       if (response.ok) {
         const token = response.headers.get('authorization').split(' ')[1];
         
-        
         // Store the token securely using SecureStore
         await SecureStore.setItemAsync('access_token', token);
-  
+        await SecureStore.setItemAsync('user_email', email);
+
         Alert.alert('Login Successful', 'You have been successfully logged in!');
         navigation.navigate('Main');
       } else {

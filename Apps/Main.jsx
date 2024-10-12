@@ -8,6 +8,7 @@ import { ProgressBar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import moment from 'moment-timezone';
+import { closestIndexTo } from 'date-fns/fp';
 
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -22,20 +23,28 @@ const initialState = {
   
   events: [
     {
+      id: '',
+      user_email: '',
       title: '',
       day: '',
-      startTime: '',
-      endTime: '',
+      startday: null,
+      endday: null,
+      semester: '',
+      starttime: '',
+      endtime: '',
       location: '',
-      extra_descriptions: ["Kim", "Lee"],
-      color: "#e1bee7",
+      init_date: null,
+      post_id: null,
     },
   ],
   newEvent: {
     title: '',
     day: '',
-    startTime: '',
-    endTime: '',
+    startday: null,
+    endday: null,
+    semester: '',
+    starttime: '',
+    endtime: '',
     location: '',
   },
   selectedDay: null,
@@ -104,6 +113,18 @@ const CustomHeader = ({ currentDate, selectedDay, onDayPress }) => {
   );
 };
 
+const getUserEmail = async () => {
+  try {
+    const email = await SecureStore.getItemAsync('user_email');
+    console.log('Retrieved email:', email);
+    return email;
+  } catch (error) {
+    console.error('Error retrieving email:', error);
+    return null;
+  }
+};
+
+
 const ScheduleScreen = () => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const { currentDate, currentWeek, isDatePickerVisible, isMonthPickerVisible, isModalVisible, selectedMonth, events, setEvents, newEvent } = state;
@@ -114,7 +135,12 @@ const ScheduleScreen = () => {
   const totalWeeks = 12;
   const [selectedDay, setSelectedDay] = useState(currentDate);
   const [storedToken, setStoredToken] = useState(null); // 상태 정의
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [userEmail, setUserEmail] = useState(null);
 
+
+  //Sever 주소 
+  const serverUrl = 'http://3.26.235.216:3000';
 
   // 토큰 불러오기 함수
   const getToken = async () => {
@@ -132,6 +158,12 @@ const ScheduleScreen = () => {
   // useEffect 함수 
   useEffect(() => {
     getToken();
+
+    const fetchUserEmail = async () => {
+      const email = await getUserEmail();
+      setUserEmail(email);
+    };
+    fetchUserEmail();
 
     fetchEventsFromDatabase();
 
@@ -177,51 +209,127 @@ const ScheduleScreen = () => {
     setSelectedEvent(null);
   }
 
-  // 이벤트 삭제 함수
-  const handleDeleteEvent = () => {
-    Alert.alert(
-      "Delete Event",
-      `Are you sure you want to delete the event "${selectedEvent?.title}"?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
+  const handleUpdateEvent = async (eventId, updatedEventData) => {
+    try {
+      const response = await fetch(`${serverUrl}/timetables/${eventId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${storedToken}`,
+          'Content-Type': 'application/json',
         },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              console.log(`Deleting event with id: ${selectedEvent.id}`); // Additional log
-              const response = await fetch(`http://localhost:3000/api/events/${selectedEvent.id}`, {
-                method: 'DELETE',
-              });
-  
-              if (response.ok) {
-                console.log('Event deleted successfully'); // Additional log
-                setEvents(events.filter(event => event.id !== selectedEvent.id));
-                
-                handleCloseEventModal();
-                updateTimetable(); 
-              } else {
-                console.error('Failed to delete event:', response.statusText); // Additional log
-                Alert.alert('Error', 'Failed to delete event.');
-              }
-            } catch (error) {
-              console.error('Something went wrong:', error); // Additional log
-              Alert.alert('Error', 'Something went wrong. Please try again.');
-            }
-          }
-        }
-      ]
-    );
+        body: JSON.stringify(updatedEventData),
+      });
+
+      if (response.ok) {
+        console.log('Event updated successfully');
+        // 이벤트 목록 새로고침
+        fetchEventsFromDatabase();
+        setIsEditMode(false);
+        setEventModalVisible(false);
+      } else {
+        console.error('Failed to update event:', response.statusText);
+        Alert.alert('Error', 'Failed to update event. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error updating event:', error);
+      Alert.alert('Error', 'Something went wrong. Please try again.');
+    }
   };
 
+  const handleEditEvent = () => {
+    setIsEditMode(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (selectedEvent) {
+      handleUpdateEvent(selectedEvent.id, selectedEvent);
+    }
+  };
+
+
+
+  // 이벤트 삭제 함수
+  const handleDeleteEvent = async (eventId) => {
+    console.log('Deleting event with ID:', eventId);
+    console.log('Event ID type:', typeof eventId);
+  
+    try {
+      const token = await getToken();
+      const response = await fetch(`${serverUrl}/${eventId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+  
+      console.log('Delete response status:', response.status);
+      const responseText = await response.text();
+      console.log('Delete response text:', responseText);
+  
+      if (response.ok) {
+        console.log('Event deleted successfully');
+        fetchEventsFromDatabase(); // 이벤트 목록 새로고침
+      } else {
+        console.error('Failed to delete event:', responseText);
+        Alert.alert('Error', `Failed to delete event: ${responseText}`);
+      }
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      Alert.alert('Error', `An error occurred while deleting the event: ${error.message}`);
+    }
+  };
+
+  const renderEventModal = () => (
+    <Modal
+      visible={isEventModalVisible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={() => setEventModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          {isEditMode ? (
+            <>
+              <TextInput
+                style={styles.input}
+                value={selectedEvent?.title}
+                onChangeText={(text) => setSelectedEvent({...selectedEvent, title: text})}
+                placeholder="Title"
+              />
+              <TextInput
+                style={styles.input}
+                value={selectedEvent?.location}
+                onChangeText={(text) => setSelectedEvent({...selectedEvent, location: text})}
+                placeholder="Location"
+              />
+              {/* 필요한 다른 필드들도 추가 */}
+              <View style={styles.buttonContainer}>
+                <Button title="Save" onPress={handleSaveEdit} />
+                <Button title="Cancel" onPress={handleCancelEdit} color="red" />
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalTitle}>{selectedEvent?.title}</Text>
+              <Text style={styles.modalText}>Location: {selectedEvent?.location}</Text>
+              {/* 다른 이벤트 정보 표시 */}
+              <View style={styles.buttonContainer}>
+                <Button title="Edit" onPress={handleEditEvent} />
+                <Button title="Delete" onPress={handleDeleteEvent} color="red" />
+                <Button title="Close" onPress={() => setEventModalVisible(false)} />
+              </View>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
 
   // 데이터베이스에서 이벤트 가져오기
   const fetchEventsFromDatabase = async () => {
     try {
-      const userEmail = await SecureStore.getItemAsync("user_email");
+      const userEmail = await getUserEmail();
       const token = await getToken();
       
       console.log('Fetching events for email:', userEmail);
@@ -233,7 +341,7 @@ const ScheduleScreen = () => {
       }
   
       const response = await fetch(
-        `http://localhost:3000/timetables/${userEmail}`,
+        `${serverUrl}/timetables/${userEmail}`,
         {
           method: "GET",
           headers: {
@@ -242,7 +350,6 @@ const ScheduleScreen = () => {
           },
         }
       );
-  
       console.log('Response status:', response.status);
       const responseText = await response.text();
       console.log('Response text:', responseText);
@@ -251,50 +358,86 @@ const ScheduleScreen = () => {
         const events = JSON.parse(responseText);
         console.log('Parsed events:', events);
   
-        const formattedEvents = events.map(event => ({
-          email: event.user_email,
-          title: event.title,
-          day: event.day.toUpperCase(),
-          startTime: genTimeBlock(event.day, parseInt(event.starttime)),
-          endTime: genTimeBlock(event.day, parseInt(event.endtime)),
-          location: event.location,
-          extra_descriptions: event.extra_descriptions || [],
-          color: event.color || '#f8bbd0',
-        }));
-        dispatch({ type: 'SET_EVENTS', payload: formattedEvents });
+        if (events.length === 0) {
+          console.log('사용자의 이벤트가 없습니다. 이는 정상적인 상황일 수 있습니다.');
+          dispatch({ type: 'SET_EVENTS', payload: [] });
+        } else {
+          const formattedEvents = events.map(event => {
+            // 시간 문자열을 파싱하는 함수
+            const parseTime = (timeString) => {
+              const [hours, minutes] = timeString.split(':');
+              return { hours: parseInt(hours, 10), minutes: parseInt(minutes, 10) };
+            };
+  
+            // starttime과 endtime 파싱
+            const startTime = parseTime(event.starttime);
+            const endTime = parseTime(event.endtime);
+  
+            console.log(`Event: ${event.title}`);
+            console.log(`Start Time - Hours: ${startTime.hours}, Minutes: ${startTime.minutes}`);
+            console.log(`End Time - Hours: ${endTime.hours}, Minutes: ${endTime.minutes}`);
+  
+            return {
+              id: event.id,
+              user_email: event.user_email,
+              title: event.title,
+              day: event.day.toUpperCase(),
+              startday: event.startday,
+              endday: event.endday,
+              semester: event.semester,
+              startTime: genTimeBlock(event.day, startTime.hours, startTime.minutes),
+              endTime: genTimeBlock(event.day, endTime.hours, endTime.minutes),
+              location: event.location,
+              init_date: event.init_date,
+              post_id: event.post_id,
+              color: '#f8bbd0', // 기본 색상 설정
+            };
+          });
+  
+          dispatch({ type: 'SET_EVENTS', payload: formattedEvents });
+        }
       } else {
-        console.log('Failed to fetch events', response.statusText);
-        Alert.alert('Error', `Failed to fetch events. Status: ${response.status}`);
+        console.log('이벤트 가져오기 실패', response.statusText);
+        console.error(`이벤트 가져오기 실패. 상태: ${response.status}`);
       }
     } catch (error) {
-      console.log('Network Error:', error);
-      Alert.alert('Error', `Failed to fetch events: ${error.message || "Unexpected error occurred."}`);
+      console.log('네트워크 오류:', error);
+      console.error(`이벤트 가져오기 실패: ${error.message || "예기치 못한 오류가 발생했습니다."}`);
     }
   };
-
-  const handleAddEvent = async () => {
-    const { title, day, startTime, endTime, location } = newEvent;
-    const userEmail = await SecureStore.getItemAsync("user_email");
   
-    if (title && day && startTime && endTime && location) {
+  const handleAddEvent = async () => {
+    const { title, day, starttime, endtime, location, semester } = newEvent;
+    const userEmail = await getUserEmail();
+    console.log('For handle Add Event: User email:', userEmail);
+
+    if (!userEmail) {
+      Alert.alert('Error', 'User email not found. Please log in again.');
+      return;
+    }
+  
+  
+    if (title && day && starttime && endtime && location && semester) {
       const days = day.split(',').map(d => d.trim().toUpperCase());
       let conflictFound = false;
   
       for (const singleDay of days) {
         const newEventObj = {
-          email: userEmail,
+          user_email: userEmail,  // 여기에 userEmail 추가
           title,
           day: singleDay,
-          startTime: parseInt(startTime),
-          endTime: parseInt(endTime),
+          startday: new Date().toISOString().split('T')[0],
+          endday: new Date().toISOString().split('T')[0],
+          semester,
+          starttime,
+          endtime,
           location,
-          extra_descriptions: [],
-          color: '#f8bbd0',
         };
-  
+
+        console.log('Events from handleAddEvent:', newEventObj);
+        
         try {
-          const response = await fetch(
-            "http://localhost:3000/timetables/create",
+          const response = await fetch(`${serverUrl}/timetables/create`,
             {
               method: "POST",
               headers: {
@@ -305,13 +448,16 @@ const ScheduleScreen = () => {
             }
           );
   
+          console.log('Response status:', response.status);
+          const responseText = await response.text();
+          console.log('Response text:', responseText);
+  
           if (response.status === 409) {
             conflictFound = true;
-            Alert.alert('시간표 충돌', `${singleDay}요일 ${startTime}:00~${endTime}:00에 이미 일정이 있습니다.`);
+            Alert.alert('시간표 충돌', `${singleDay}요일 ${starttime}~${endtime}에 이미 일정이 있습니다.`);
             break;
           } else if (!response.ok) {
-            const errorText = await response.text();
-            console.log('Server Error:', errorText);
+            console.log('Server Error:', responseText);
             Alert.alert('Error', `Failed to add event for ${singleDay}. Please try again.`);
             return;
           }
@@ -326,9 +472,10 @@ const ScheduleScreen = () => {
         dispatch({ type: 'SET_NEW_EVENT', payload: {
           title: '',
           day: '',
-          startTime: '',
-          endTime: '',
+          starttime: '',
+          endtime: '',
           location: '',
+          semester: '',
         }});
         Alert.alert('Success', 'Events added successfully');
         dispatch({ type: 'TOGGLE_MODAL' });
@@ -338,7 +485,7 @@ const ScheduleScreen = () => {
       Alert.alert('Error', 'Fill in all fields.');
     }
   };
-
+  
   // 등록된 이벤트 모달 클릭해서 여는 함수
   const onEventPress = (evt) => {
     //Alert.alert("onEventPress", JSON.stringify(evt));
@@ -413,43 +560,46 @@ const ScheduleScreen = () => {
           onRequestClose={() => dispatch({ type: 'TOGGLE_MODAL' })}
         >
           <TouchableWithoutFeedback onPress={() => dispatch({ type: 'TOGGLE_MODAL' })}>
-            
             <View style={styles.modalContainer}>
               <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Add New Event</Text>
                 <ScrollView>
-                <TextInput
-                  placeholder="Title"
-                  value={newEvent.title}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { title: text } })}
-                  style={styles.input}
-                />
-                <TextInput
-                  placeholder="Day (e.g., MON, WED)"
-                  value={newEvent.day}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { day: text } })}
-                  style={styles.input}
-                />
-                <TextInput
-                  placeholder="Start Time (Hour, e.g., 10)"
-                  value={newEvent.startTime}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { startTime: text } })}
-                  style={styles.input}
-                  keyboardType="numeric"
-                />
-                <TextInput
-                  placeholder="End Time (Hour, e.g., 12)"
-                  value={newEvent.endTime}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { endTime: text } })}
-                  style={styles.input}
-                  keyboardType="numeric"
-                />
-                <TextInput
-                  placeholder="Location"
-                  value={newEvent.location}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { location: text } })}
-                  style={styles.input}
-                />
+                  <TextInput
+                    placeholder="Title"
+                    value={newEvent.title}
+                    onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { title: text } })}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    placeholder="Day (e.g., MON, WED)"
+                    value={newEvent.day}
+                    onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { day: text } })}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    placeholder="Start Time (HH:MM)"
+                    value={newEvent.starttime}
+                    onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { starttime: text } })}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    placeholder="End Time (HH:MM)"
+                    value={newEvent.endtime}
+                    onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { endtime: text } })}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    placeholder="Location"
+                    value={newEvent.location}
+                    onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { location: text } })}
+                    style={styles.input}
+                  />
+                  <TextInput
+                    placeholder="Semester"
+                    value={newEvent.semester}
+                    onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { semester: text } })}
+                    style={styles.input}
+                  />
                 </ScrollView>
                 <View style={styles.buttonContainer}>
                   <Button title="Add Event" onPress={handleAddEvent} />
@@ -460,27 +610,7 @@ const ScheduleScreen = () => {
           </TouchableWithoutFeedback>
         </Modal>
 
-        <Modal
-          visible={isEventModalVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={handleCloseEventModal}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>{selectedEvent?.title}</Text>
-               <TouchableOpacity style={styles.close} onPress={handleCloseEventModal}>
-                    <Ionicons name="close" size={28} color="black" />
-                </TouchableOpacity>
-              <Text style={styles.modalText}>Subject Code: 41001</Text>
-              <Text style={styles.modalText}>Subject Type: Tutorial</Text>
-              <Text style={styles.modalText}>Subject Details: This A subject is a collection of topics that forms a coherent whole, intended to be taught by a faculty member. </Text>
-              <Text style={styles.modalText}>Location: {selectedEvent?.location}</Text>
-              <Button title="Lecture Review" onPress={handleReview} />
-              <Button title="Delete" onPress={handleDeleteEvent} color="red" />
-            </View>
-          </View>
-        </Modal>
+        {renderEventModal()}
 
         <View style={styles.progressContainer}>
           <TouchableOpacity onPress={handleResetToToday}>
@@ -499,14 +629,16 @@ const ScheduleScreen = () => {
         />
         <TimeTableView
             events={events}
-            pivotTime={9}
-            pivotEndTime={20}
+            pivotTime={8}
+            pivotEndTime={22}
             pivotDate={genTimeBlock('mon')}
             nDays={7}
             onEventPress={onEventPress}
             locale="en"
-            timeStep={60}
-            styles={timetableStyles}
+            timeStep={30}
+            // styles={timetableStyles}
+            headerStyle={{height: 0}}
+            containerStyle={{paddingTop: 0}}
         />
 
         <View style={styles.bottomNav}>
@@ -532,6 +664,7 @@ const ScheduleScreen = () => {
 
 const timetableStyles = {
   container: {
+    backgroundColor: 'pink',
     flex: 1,
   },
   eventCell: {
