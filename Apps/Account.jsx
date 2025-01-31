@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,56 @@ import * as SecureStore from 'expo-secure-store';
 
 const Account = () => {
   const navigation = useNavigation();
+  const [userInfo, setUserInfo] = useState({
+    name: 'User',
+    major_code: '',
+    degree_name: ''
+  });
+
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const token = await SecureStore.getItemAsync('access_token');
+        const email = await SecureStore.getItemAsync('user_email');
+
+        // 사용자 정보 가져오기
+        const userResponse = await fetch(`http://localhost:3000/users/${email}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          
+          // 전공 정보 가져오기 (엔드포인트 수정)
+          const majorResponse = await fetch(
+            `http://localhost:3000/majors/code/${userData.major_code}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            }
+          );
+
+          if (majorResponse.ok) {
+            const majorData = await majorResponse.json();
+            setUserInfo({
+              name: userData.user_name || 'User',
+              major_code: majorData.code || '',
+              degree_name: majorData.degreeName || ''
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user info:', error);
+      }
+    };
+
+    fetchUserInfo();
+  }, []);
 
   const handleActivity = () => {
     navigation.navigate('Resume');
@@ -22,10 +72,15 @@ const Account = () => {
 
 
   const handleLogout = async () => {
-    await SecureStore.deleteItemAsync('access_token');
-    navigation.navigate('Login');
+    try {
+      await SecureStore.deleteItemAsync('access_token');
+      await SecureStore.deleteItemAsync('user_email');
+      // 로그인 페이지로 이동
+      navigation.navigate('Login');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
-  
 
   return (
     <View style={styles.container}>
@@ -33,56 +88,54 @@ const Account = () => {
         colors={['#2b189e', '#5d4add', '#a38ef9']}
         style={styles.header}
       >
-        <Text style={styles.headerText}>Jungmin Kim</Text>
+        <Text style={styles.headerText}>{userInfo.name}</Text>
         <Text style={styles.profileUniversity}>University of Technology Sydney</Text>
       </LinearGradient>
 
       <View style={styles.body}>
-      <View style={styles.profileImageContainer}>
-        <Image source={{ uri: 'https://via.placeholder.com/100' }} style={styles.profileImage} />
-      </View>
-      <View style={styles.infoContainer}>
+        <View style={styles.profileImageContainer}>
+          <Image source={{ uri: 'https://via.placeholder.com/100' }} style={styles.profileImage} />
+        </View>
+        <View style={styles.infoContainer}>
           <View style={styles.infoBox}>
-            <Text style={styles.infoText}>Data Analytics</Text>
-            <Text style={styles.infoLabel}>Information Technology</Text>
+            <Text style={styles.infoText}>{userInfo.major_code}</Text>
+            <Text style={styles.infoLabel}>{userInfo.degree_name}</Text>
           </View>
         </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <TouchableOpacity style={styles.menuItem} onPress={handleActivity}>
-          <Ionicons name="heart-outline" size={24} color="#7B68EE" />
-          <Text style={styles.menuText}>Your Activity</Text>
-        </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.content}>
+          <TouchableOpacity style={styles.menuItem} onPress={handleActivity}>
+            <Ionicons name="heart-outline" size={24} color="#7B68EE" />
+            <Text style={styles.menuText}>Your Activity</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleSettings}>
-          <Ionicons name="star-outline" size={24} color="#7B68EE" />
-          <Text style={styles.menuText}>Saved Posts</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleSettings}>
+            <Ionicons name="star-outline" size={24} color="#7B68EE" />
+            <Text style={styles.menuText}>Saved Posts</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleHelp}>
-          <Ionicons name="pricetag-outline" size={24} color="#7B68EE" />
-          <Text style={styles.menuText}>Promotions</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleHelp}>
+            <Ionicons name="pricetag-outline" size={24} color="#7B68EE" />
+            <Text style={styles.menuText}>Promotions</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleHelp}>
-          <Ionicons name="megaphone-outline" size={24} color="#7B68EE" />
-          <Text style={styles.menuText}>Helps</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleHelp}>
+            <Ionicons name="megaphone-outline" size={24} color="#7B68EE" />
+            <Text style={styles.menuText}>Helps</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleSettings}>
-          <Ionicons name="settings-outline" size={24} color="#7B68EE" />
-          <Text style={styles.menuText}>Settings</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleSettings}>
+            <Ionicons name="settings-outline" size={24} color="#7B68EE" />
+            <Text style={styles.menuText}>Settings</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="#FF6347" />
-          <Text style={styles.menuText}>Logout</Text>
-        </TouchableOpacity>
-      </ScrollView>
+          <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
+            <Ionicons name="log-out-outline" size={24} color="#FF6347" />
+            <Text style={styles.menuText}>Logout</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
-
-      
-      </View>
+    </View>
   );
 };
 

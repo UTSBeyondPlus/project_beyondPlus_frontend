@@ -2,8 +2,10 @@ import 'react-native-gesture-handler';
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import Login from './Apps/login';
+import Login from './Apps/Login';
 import Main from './Apps/Main';
+import AddEvent from './Apps/AddEvent';
+import EditEvent from './Apps/EditEvent';
 import SignIn from './Apps/signin'; 
 import Review from './Apps/Review';
 import Account from './Apps/Account';
@@ -14,8 +16,10 @@ import Resume from './Apps/Resume'
 import Post from './Apps/Post'
 import PostDetails from './Apps/PostDetails';
 import Community from './Apps/Community';
+import UserInfo from './Apps/UserInfoForm';
 import { useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store'; 
+import { EventProvider } from './contexts/EventContext';
 
 import { createNavigationContainerRef } from '@react-navigation/native';
 const navigationRef = createNavigationContainerRef();
@@ -57,58 +61,72 @@ const App = () => {
   
 
   return (
-    <NavigationContainer ref={navigationRef}>
-      <Stack.Navigator initialRouteName="Login">
-        <Stack.Screen
-          name="Login"
-          component={Login}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Main"
-          component={Main}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="SignIn"
-          component={SignIn}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Review"
-          component={Review}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Account"
-          component={Account}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Resume"
-          component={Resume}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="PostDetails" 
-          component={PostDetails}
-          options={{ headerShown: false }}  
-         />
-         <Stack.Screen 
-          name="Community" 
-          component={Community}
-          options={{ headerShown: false }}  
-         />
-         
-        <Stack.Screen name="Activity" component={Activity} />
-        <Stack.Screen name="Settings" component={Settings} />
-        <Stack.Screen name="Help" component={Help} />
-        <Stack.Screen name="Post" component={Post} />
-        
-      </Stack.Navigator>
-    </NavigationContainer>
-  
-    
+    <EventProvider>
+      <NavigationContainer ref={navigationRef}>
+        <Stack.Navigator initialRouteName="Login">
+          <Stack.Screen
+            name="Login"
+            component={Login}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Main"
+            component={Main}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="AddEvent"
+            component={AddEvent}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="SignIn"
+            component={SignIn}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Review"
+            component={Review}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Account"
+            component={Account}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Resume"
+            component={Resume}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen 
+            name="PostDetails" 
+            component={PostDetails}
+            options={{ headerShown: false }}  
+           />
+           <Stack.Screen 
+            name="Community" 
+            component={Community}
+            options={{ headerShown: false }}  
+           />
+           
+          <Stack.Screen name="Activity" component={Activity} />
+          <Stack.Screen name="Settings" component={Settings} />
+          <Stack.Screen name="Help" component={Help} />
+          <Stack.Screen name="Post" component={Post} />
+          <Stack.Screen
+            name="UserInfo"
+            component={UserInfo}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="EditEvent"
+            component={EditEvent}
+            options={{ headerShown: false }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </EventProvider>
   );
 };
 

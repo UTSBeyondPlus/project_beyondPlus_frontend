@@ -15,7 +15,10 @@ const Login = () => {
 
   const sendVerificationCode = async () => {
     if (emailPrefix) {
+      // const email = `${emailPrefix}@gmail.com`;
       const email = `${emailPrefix}@student.uts.edu.au`;
+      console.log('Sending verification code to:', email); // 디버깅용 로그 추가
+
       try {
         const response = await fetch('http://localhost:3000/login/signup', {
           method: 'POST',
@@ -25,7 +28,11 @@ const Login = () => {
           body: JSON.stringify({ email })
         });
 
+        console.log('Server response status:', response.status); // 응답 상태 확인
+
         const responseText = await response.text();
+        console.log('Server response:', responseText); // 서버 응답 확인
+
         try {
           const data = JSON.parse(responseText);
           if (response.ok) {
@@ -33,25 +40,27 @@ const Login = () => {
             Alert.alert('Verification', 'A verification code has been sent to your email.');
           } else {
             Alert.alert('Error', data.message || 'Failed to send verification code');
+            console.error('Server error:', data); // 서버 에러 로깅
           }
         } catch (jsonError) {
-          console.error('Failed to parse JSON from response:', responseText);
+          console.error('Failed to parse JSON:', responseText);
           Alert.alert('Error', 'Server response was not in JSON format');
         }
       } catch (error) {
-        console.error('Error sending verification code:', error);
-        Alert.alert('Error', 'Failed to connect to the server');
+        console.error('Network error:', error);
+        Alert.alert('Error', 'Failed to connect to the server. Please check your internet connection.');
       }
     } else {
       Alert.alert('Invalid Email', 'Please enter your student ID before the domain.');
     }
   };
 
+
   const verifyCode = async () => {
     const email = `${emailPrefix}@student.uts.edu.au`;
     const verificationCode = code.join('');
     const password = "1234";
-    console.log(verificationCode);
+    
     try {
       const response = await fetch('http://localhost:3000/login/verify', {
         method: 'POST',
@@ -60,29 +69,57 @@ const Login = () => {
         },
         body: JSON.stringify({ email, verificationCode, password })
       });
-      const data = await response.text();
-
+      
+      const data = await response.json();
+  
       if (response.ok) {
         const token = response.headers.get('authorization').split(' ')[1];
-
-        // Store token securely using SecureStore
         await SecureStore.setItemAsync('access_token', token);
+        await SecureStore.setItemAsync('user_email', email);
 
-        Alert.alert('Verification Success', 'You have been successfully logged in!');
-        navigation.navigate('Main');
+          // master 계정 체크
+          if (email === 'master@student.uts.edu.au') {
+            navigation.navigate('Main');
+            return;
+          }
+
+        // 일반 사용자 프로필 정보 확인
+        const profileResponse = await fetch(`http://localhost:3000/users/${email}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        const profileData = await profileResponse.json();
+
+        // is_profile_complete 값을 확인
+        if (!profileData.is_profile_complete) {
+          navigation.navigate('UserInfo');
+        } else {
+          navigation.navigate('Main');
+        }
       } else {
-        Alert.alert('Invalid verification code, please try again.');
+        Alert.alert('Error', data.message || 'Invalid verification code');
       }
     } catch (error) {
-      console.error('Error verifying code:', error);
-      Alert.alert('Error', 'Failed to connect to the server');
+      console.error('Error during verification:', error);
+      Alert.alert('Error', 'Failed to verify code');
     }
   };
-
-  const directLogin = async () => {
-    const email = `${emailPrefix}@student.uts.edu.au`;
-    const password = "1234"; // Change this to collect a password input if needed
   
+
+// 일반 로그인 
+  const handleLogin = async () => {
+    if (!emailPrefix) {
+      Alert.alert('Error', 'Please enter your email');
+      return;
+    }
+
+    const email = `${emailPrefix}@student.uts.edu.au`;
+    // const email = `${emailPrefix}@gmail.com`;
+    const password = "1234";
+
     try {
       const response = await fetch('http://localhost:3000/login', {
         method: 'POST',
@@ -91,24 +128,46 @@ const Login = () => {
         },
         body: JSON.stringify({ email, password })
       });
-  
+
+      // 응답 상태 코드 확인
+      if (!response.ok) {
+        const errorText = await response.text(); // 응답을 텍스트로 읽기
+        console.error('Login error:', errorText);
+        throw new Error(`Login failed: ${response.status} ${response.statusText}`);
+      }
+
       const data = await response.json();
-  
-      if (response.ok) {
-        const token = response.headers.get('authorization').split(' ')[1];
-        
-        
-        // Store the token securely using SecureStore
-        await SecureStore.setItemAsync('access_token', token);
-  
-        Alert.alert('Login Successful', 'You have been successfully logged in!');
-        navigation.navigate('Main');
+      console.log('Login successful:', data);
+
+      const token = response.headers.get('authorization').split(' ')[1];
+      await SecureStore.setItemAsync('access_token', token);
+      await SecureStore.setItemAsync('user_email', email);
+
+        // master 계정 체크
+        if (email === 'master@student.uts.edu.au') {
+            navigation.navigate('Main');
+            return;
+        }
+
+      // 일반 사용자 프로필 정보 확인
+      const profileResponse = await fetch(`http://localhost:3000/users/${email}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const profileData = await profileResponse.json();
+
+      // is_profile_complete 값을 확인
+      if (!profileData.is_profile_complete) {
+        navigation.navigate('UserInfo');
       } else {
-        Alert.alert('Error', data.message || 'Failed to login. Please try again.');
+        navigation.navigate('Main');
       }
     } catch (error) {
-      console.error('Error during direct login:', error);
-      Alert.alert('Error', 'Failed to connect to the server');
+      console.error('Error during login:', error);
+      Alert.alert('Error', 'Failed to connect to server');
     }
   };
 
@@ -155,7 +214,7 @@ const Login = () => {
           <TouchableOpacity style={styles.applyButton} onPress={sendVerificationCode}>
             <Text style={styles.applyButtonText}>Apply</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.loginButton} onPress={directLogin}>
+          <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
             <Text style={styles.applyButtonText}>Login</Text>
           </TouchableOpacity>
         </View>

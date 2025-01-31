@@ -9,8 +9,10 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@expo/vector-icons": "^14.0.4",
     "@react-native-async-storage/async-storage": "^2.0.0",
     "@react-native-community/checkbox": "^0.5.17",
+    "@react-native-community/datetimepicker": "^8.2.0",
     "@react-native-community/masked-view": "^0.1.11",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/stack": "^6.4.1",
@@ -25,7 +27,7 @@
     "hmacsha1": "^1.0.0",
     "init": "^0.1.2",
     "linking": "^0.1.0-beta.5",
-    "moment-timezone": "^0.5.45",
+    "moment-timezone": "^0.5.46",
     "react": "18.2.0",
     "react-native": "0.74.3",
     "react-native-calendars": "^1.1306.0",
@@ -48,5 +50,6 @@
   "private": true,
   "description": "Beyond+ is a React Native application designed to manage and review class schedules, user activities, and settings. It provides a user-friendly interface for selecting times, viewing timetables, and managing user accounts. This project is optimized for efficiency and maintainability, ensuring a smooth user experience. ##",
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

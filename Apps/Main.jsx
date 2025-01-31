@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useReducer } from 'react';
+import React, { useState, useEffect, useReducer, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Alert, Modal, TextInput, TouchableWithoutFeedback, Keyboard, Button, FlatList,ScrollView } from 'react-native';
 import TimeTableView, { genTimeBlock } from 'react-native-timetable';
 import { useNavigation } from '@react-navigation/native';
+import { useEvents } from '../contexts/EventContext';
 import { LinearGradient } from 'expo-linear-gradient';
 import { differenceInWeeks, format } from 'date-fns';
 import { ProgressBar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import moment from 'moment-timezone';
+import EventInputModal from './components/EventInputModal';
+
 
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -20,23 +23,14 @@ const initialState = {
   // selectedMonth: 'August',
   selectedMonth: moment().tz('Australia/Sydney').format('MMMM'),
   
-  events: [
-    {
-      title: '',
-      day: '',
-      startTime: '',
-      endTime: '',
-      location: '',
-      extra_descriptions: ["Kim", "Lee"],
-      color: "#e1bee7",
-    },
-  ],
+  events: [],
   newEvent: {
     title: '',
     day: '',
     startTime: '',
     endTime: '',
     location: '',
+    semester: '',
   },
   selectedDay: null,
 };
@@ -63,6 +57,10 @@ function reducer(state, action) {
       return { ...state, selectedDay: action.payload };
     case 'SET_EVENTS':
       return { ...state, events: action.payload };
+    case 'SET_RAW_EVENTS':
+      return { ...state, rawEvents: action.payload };
+    case 'UPDATE_NEW_EVENT':
+      return { ...state, newEvent: { ...state.newEvent, ...action.payload } };
     default:
       return state;
   }
@@ -78,7 +76,7 @@ const calculateCurrentWeek = (startDate, currentDate) => {
   return weeks;
 };
 
-const CustomHeader = ({ currentDate, selectedDay, onDayPress }) => {
+const CustomHeader = ({ currentDate, onHeaderDatePress }) => {
   const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const datesOfWeek = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(currentDate);
@@ -90,12 +88,25 @@ const CustomHeader = ({ currentDate, selectedDay, onDayPress }) => {
     <View style={styles.customHeaderContainer}>
       {daysOfWeek.map((day, index) => {
         const date = datesOfWeek[index];
-        const isToday = date.toDateString() === getSydneyDate(new Date()).toDateString();
-        const isSelected = selectedDay && date.toDateString() === selectedDay.toDateString();
+        const isToday = date.toDateString() === new Date().toDateString();
+
+        const handlePress = () => {
+          if (day === 'Mon') {
+            onHeaderDatePress('prev');
+          } else if (day === 'Sun') {
+            onHeaderDatePress('next');
+          }
+        };
+
         return (
-          <TouchableOpacity key={index} style={styles.dayContainer} onPress={() => onDayPress(date)}>
-            <Text style={[styles.dayText, isToday && styles.todayText, isSelected && styles.selectedDayText]}>{day}</Text>
-            <Text style={[styles.dateText, isToday && styles.todayDateText, isSelected && styles.selectedDateText]}>{date.getDate()}</Text>
+          <TouchableOpacity
+            key={index}
+            style={styles.dayContainer}
+            onPress={handlePress}
+            disabled={day !== 'Mon' && day !== 'Sun'}
+          >
+            <Text style={[styles.dayText, isToday && styles.todayText]}>{day}</Text>
+            <Text style={[styles.dateText, isToday && styles.todayDateText]}>{date.getDate()}</Text>
             {isToday && <View style={styles.todayIndicator} />}
           </TouchableOpacity>
         );
@@ -105,63 +116,78 @@ const CustomHeader = ({ currentDate, selectedDay, onDayPress }) => {
 };
 
 const ScheduleScreen = () => {
+  const { events, fetchEvents } = useEvents();
   const [state, dispatch] = useReducer(reducer, initialState);
-  const { currentDate, currentWeek, isDatePickerVisible, isMonthPickerVisible, isModalVisible, selectedMonth, events, setEvents, newEvent } = state;
-  const [isEventModalVisible, setEventModalVisible] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState([]);
-  const navigation = useNavigation();
-  const semesterStartDate = getSydneyDate(new Date('2024-07-01'));
-  const totalWeeks = 12;
+  const { currentDate, currentWeek } = state;
   const [selectedDay, setSelectedDay] = useState(currentDate);
-  const [storedToken, setStoredToken] = useState(null); // 상태 정의
+  const [weekOffset, setWeekOffset] = useState(0);
 
+  const navigation = useNavigation();
 
-  // 토큰 불러오기 함수
-  const getToken = async () => {
+  const stableFetchEvents = useCallback(fetchEvents, []);
+
+  const fetchEventsFromDatabase = async () => {
     try {
+      const userEmail = await SecureStore.getItemAsync('user_email');
       const token = await SecureStore.getItemAsync('access_token');
-      setStoredToken(token);
-      console.log('Retrieved token:', token);
-      return token;
+
+      const response = await fetch(
+        `http://localhost:3000/timetables/${userEmail}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+        }
+      );
+
+      if (response.ok) {
+        const events = await response.json();
+        const formattedEvents = events.map(event => ({
+          id: event.id,
+          title: event.title,
+          day: event.day,
+          startTime: genTimeBlock(
+            event.day,
+            parseInt(event.starttime.split(':')[0]),
+            parseInt(event.starttime.split(':')[1])
+          ),
+          endTime: genTimeBlock(
+            event.day,
+            parseInt(event.endtime.split(':')[0]),
+            parseInt(event.endtime.split(':')[1])
+          ),
+          location: event.location,
+          notes: event.notes,
+          session: event.session
+        }));
+        
+        dispatch({ type: 'SET_RAW_EVENTS', payload: events }); // 원본 데이터 저장
+        dispatch({ type: 'SET_EVENTS', payload: formattedEvents });
+      }
     } catch (error) {
-      console.error('Error retrieving token:', error);
-      return null;
+      console.error('Error fetching events:', error);
     }
   };
 
-  // useEffect 함수 
   useEffect(() => {
-    getToken();
-
     fetchEventsFromDatabase();
+  }, []);
 
-    const sydneyCurrent = moment(currentDate).tz('Australia/Sydney').startOf('day');
-    const lastDayOfMonth = sydneyCurrent.clone().endOf('month').date();
-    const currentWeek = calculateCurrentWeek(semesterStartDate, sydneyCurrent.toDate());
-
-    if (sydneyCurrent.date() === lastDayOfMonth) {
-      const newDate = sydneyCurrent.add(1, 'day').toDate();
-      dispatch({ type: 'SET_DATE', payload: newDate });
-      dispatch({ type: 'SET_MONTH', payload: months[newDate.getMonth()] });
-    }
-
-    dispatch({ type: 'SET_WEEK', payload: currentWeek > 12 ? currentWeek % 12 : currentWeek });
-  }, [currentDate]);
-
-  const handleMonthSelect = (month) => {
-    const newDate = moment.tz('Australia/Sydney').set({
-      'year': currentDate.getFullYear(),
-      'month': months.indexOf(month),
-      'date': 1
-    }).toDate();
-    dispatch({ type: 'SET_DATE', payload: newDate });
-    dispatch({ type: 'SET_MONTH', payload: month });
-    dispatch({ type: 'TOGGLE_MONTH_PICKER' });
-  };
-
-  const handleDayPress = (date) => {
-    setSelectedDay(date);
-    dispatch({ type: 'SET_DATE', payload: date });
+  const onEventPress = (evt) => {
+    console.log('Clicked event:', evt);
+    navigation.navigate('EditEvent', {
+      event: {
+        id: evt.id,
+        title: evt.title,
+        day: evt.day,
+        startTime: evt.startTime,
+        endTime: evt.endTime,
+        location: evt.location || '',
+        notes: evt.notes || '',
+        session: evt.session || 'Spring'
+      }
+    });
   };
 
   const handleResetToToday = () => {
@@ -169,364 +195,78 @@ const ScheduleScreen = () => {
     setSelectedDay(today);
     dispatch({ type: 'SET_DATE', payload: today });
     dispatch({ type: 'SET_MONTH', payload: months[today.getMonth()] });
+    setWeekOffset(0); // Reset week offset
   };
 
-  // 이벤트 모달 닫기 함수
-  const handleCloseEventModal =() => {
-    setEventModalVisible(false);
-    setSelectedEvent(null);
-  }
-
-  // 이벤트 삭제 함수
-  const handleDeleteEvent = () => {
-    Alert.alert(
-      "Delete Event",
-      `Are you sure you want to delete the event "${selectedEvent?.title}"?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel"
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              console.log(`Deleting event with id: ${selectedEvent.id}`); // Additional log
-              const response = await fetch(`http://localhost:3000/api/events/${selectedEvent.id}`, {
-                method: 'DELETE',
-              });
-  
-              if (response.ok) {
-                console.log('Event deleted successfully'); // Additional log
-                setEvents(events.filter(event => event.id !== selectedEvent.id));
-                
-                handleCloseEventModal();
-                updateTimetable(); 
-              } else {
-                console.error('Failed to delete event:', response.statusText); // Additional log
-                Alert.alert('Error', 'Failed to delete event.');
-              }
-            } catch (error) {
-              console.error('Something went wrong:', error); // Additional log
-              Alert.alert('Error', 'Something went wrong. Please try again.');
-            }
-          }
-        }
-      ]
-    );
-  };
-
-
-  // 데이터베이스에서 이벤트 가져오기
-  const fetchEventsFromDatabase = async () => {
-    try {
-      const userEmail = await SecureStore.getItemAsync("user_email");
-      const token = await getToken();
-      
-      console.log('Fetching events for email:', userEmail);
-      console.log('Token:', token);
-  
-      if (!token) {
-        console.error('토큰이 없습니다.');
-        return;
-      }
-  
-      const response = await fetch(
-        `http://localhost:3000/timetables/${userEmail}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-  
-      console.log('Response status:', response.status);
-      const responseText = await response.text();
-      console.log('Response text:', responseText);
-  
-      if (response.ok) {
-        const events = JSON.parse(responseText);
-        console.log('Parsed events:', events);
-  
-        const formattedEvents = events.map(event => ({
-          email: event.user_email,
-          title: event.title,
-          day: event.day.toUpperCase(),
-          startTime: genTimeBlock(event.day, parseInt(event.starttime)),
-          endTime: genTimeBlock(event.day, parseInt(event.endtime)),
-          location: event.location,
-          extra_descriptions: event.extra_descriptions || [],
-          color: event.color || '#f8bbd0',
-        }));
-        dispatch({ type: 'SET_EVENTS', payload: formattedEvents });
-      } else {
-        console.log('Failed to fetch events', response.statusText);
-        Alert.alert('Error', `Failed to fetch events. Status: ${response.status}`);
-      }
-    } catch (error) {
-      console.log('Network Error:', error);
-      Alert.alert('Error', `Failed to fetch events: ${error.message || "Unexpected error occurred."}`);
+  const onHeaderDatePress = (direction) => {
+    if (direction === 'prev') {
+      setWeekOffset(prev => prev - 1);
+    } else if (direction === 'next') {
+      setWeekOffset(prev => prev + 1);
     }
   };
 
-  const handleAddEvent = async () => {
-    const { title, day, startTime, endTime, location } = newEvent;
-    const userEmail = await SecureStore.getItemAsync("user_email");
-  
-    if (title && day && startTime && endTime && location) {
-      const days = day.split(',').map(d => d.trim().toUpperCase());
-      let conflictFound = false;
-  
-      for (const singleDay of days) {
-        const newEventObj = {
-          email: userEmail,
-          title,
-          day: singleDay,
-          startTime: parseInt(startTime),
-          endTime: parseInt(endTime),
-          location,
-          extra_descriptions: [],
-          color: '#f8bbd0',
-        };
-  
-        try {
-          const response = await fetch(
-            "http://localhost:3000/timetables/create",
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${storedToken}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(newEventObj),
-            }
-          );
-  
-          if (response.status === 409) {
-            conflictFound = true;
-            Alert.alert('시간표 충돌', `${singleDay}요일 ${startTime}:00~${endTime}:00에 이미 일정이 있습니다.`);
-            break;
-          } else if (!response.ok) {
-            const errorText = await response.text();
-            console.log('Server Error:', errorText);
-            Alert.alert('Error', `Failed to add event for ${singleDay}. Please try again.`);
-            return;
-          }
-        } catch (error) {
-          console.log('Network Error:', error);
-          Alert.alert('Error', `Failed to add event for ${singleDay}: ${error.message || "Unexpected error occurred."}`);
-          return;
-        }
-      }
-  
-      if (!conflictFound) {
-        dispatch({ type: 'SET_NEW_EVENT', payload: {
-          title: '',
-          day: '',
-          startTime: '',
-          endTime: '',
-          location: '',
-        }});
-        Alert.alert('Success', 'Events added successfully');
-        dispatch({ type: 'TOGGLE_MODAL' });
-        fetchEventsFromDatabase();
-      }
-    } else {
-      Alert.alert('Error', 'Fill in all fields.');
-    }
-  };
-
-  // 등록된 이벤트 모달 클릭해서 여는 함수
-  const onEventPress = (evt) => {
-    //Alert.alert("onEventPress", JSON.stringify(evt));
-    setSelectedEvent(evt);
-    setEventModalVisible(true);
-  };
-
-  // 리뷰 페이지 이동 함수
-  const handleReview = () => {
-    navigation.navigate('Review');
-  };
-  
-  // TimeTableView 컴포넌트 사용 부분
-  const formattedEvents = events.map(event => ({
-    ...event,
-    startTime: genTimeBlock(event.day, event.startTime),
-    endTime: genTimeBlock(event.day, event.endTime)
-  }));
-
+  const adjustedDate = moment().add(weekOffset, 'weeks').toDate();
+  const currentMonth = months[adjustedDate.getMonth()];
 
   return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#2b189e', '#5d4add', '#a38ef9']}
-          style={styles.header}
-        >
-          <Text style={styles.headerText}>BEYOND⁺</Text>
-          <View style={styles.headerCenter}>
-            <TouchableOpacity onPress={() => dispatch({ type: 'TOGGLE_MONTH_PICKER' })}>
-              <Text style={styles.headerCenterText}>{selectedMonth}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity onPress={() => dispatch({ type: 'TOGGLE_MODAL' })}>
-              <Ionicons name="add" size={28} color="white" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Account')}>
-              <Ionicons name="person" size={24} color="white" />
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-
-        {/* Month Picker Modal */}
-        <Modal
-          visible={isMonthPickerVisible}
-          animationType="slide"
-          transparent={true}
-        >
-          <TouchableWithoutFeedback onPress={() => dispatch({ type: 'TOGGLE_MONTH_PICKER' })}>
-            <View style={styles.modalContainer}>
-              <View style={styles.modalContent}>
-                <FlatList 
-                  data={months}
-                  keyExtractor={(item) => item}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity onPress={() => handleMonthSelect(item)}>
-                      <Text style={styles.modalItemText}>{item}</Text>
-                    </TouchableOpacity>
-                  )}
-                />
-                <Button title="Close" onPress={() => dispatch({ type: 'TOGGLE_MONTH_PICKER' })} />
-              </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-
-        {/* Add Event Modal */}
-        <Modal
-          visible={isModalVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => dispatch({ type: 'TOGGLE_MODAL' })}
-        >
-          <TouchableWithoutFeedback onPress={() => dispatch({ type: 'TOGGLE_MODAL' })}>
-            
-            <View style={styles.modalContainer}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Add New Event</Text>
-                <ScrollView>
-                <TextInput
-                  placeholder="Title"
-                  value={newEvent.title}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { title: text } })}
-                  style={styles.input}
-                />
-                <TextInput
-                  placeholder="Day (e.g., MON, WED)"
-                  value={newEvent.day}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { day: text } })}
-                  style={styles.input}
-                />
-                <TextInput
-                  placeholder="Start Time (Hour, e.g., 10)"
-                  value={newEvent.startTime}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { startTime: text } })}
-                  style={styles.input}
-                  keyboardType="numeric"
-                />
-                <TextInput
-                  placeholder="End Time (Hour, e.g., 12)"
-                  value={newEvent.endTime}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { endTime: text } })}
-                  style={styles.input}
-                  keyboardType="numeric"
-                />
-                <TextInput
-                  placeholder="Location"
-                  value={newEvent.location}
-                  onChangeText={(text) => dispatch({ type: 'SET_NEW_EVENT', payload: { location: text } })}
-                  style={styles.input}
-                />
-                </ScrollView>
-                <View style={styles.buttonContainer}>
-                  <Button title="Add Event" onPress={handleAddEvent} />
-                  <Button title="Cancel" onPress={() => dispatch({ type: 'TOGGLE_MODAL' })} color="red" />
-                </View>
-              </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-
-        <Modal
-          visible={isEventModalVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={handleCloseEventModal}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>{selectedEvent?.title}</Text>
-               <TouchableOpacity style={styles.close} onPress={handleCloseEventModal}>
-                    <Ionicons name="close" size={28} color="black" />
-                </TouchableOpacity>
-              <Text style={styles.modalText}>Subject Code: 41001</Text>
-              <Text style={styles.modalText}>Subject Type: Tutorial</Text>
-              <Text style={styles.modalText}>Subject Details: This A subject is a collection of topics that forms a coherent whole, intended to be taught by a faculty member. </Text>
-              <Text style={styles.modalText}>Location: {selectedEvent?.location}</Text>
-              <Button title="Lecture Review" onPress={handleReview} />
-              <Button title="Delete" onPress={handleDeleteEvent} color="red" />
-            </View>
-          </View>
-        </Modal>
-
-        <View style={styles.progressContainer}>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['#2b189e', '#5d4add', '#a38ef9']}
+        style={styles.header}
+      >
+        <Text style={styles.headerText}>BEYOND⁺</Text>
+        <View style={styles.headerCenter}>
           <TouchableOpacity onPress={handleResetToToday}>
-            <Text style={styles.weekText}>Week {currentWeek} of {totalWeeks}</Text>
+            <Text style={styles.headerCenterText}>{currentMonth}</Text>
           </TouchableOpacity>
-          <ProgressBar 
-            progress={currentWeek / totalWeeks} 
-            color="#7B68EE" 
-            style={styles.progressBar}
-          />
         </View>
-        <CustomHeader 
-          currentDate={currentDate} 
-          selectedDay={selectedDay} 
-          onDayPress={handleDayPress}
-        />
-        <TimeTableView
-            events={events}
-            pivotTime={9}
-            pivotEndTime={20}
-            pivotDate={genTimeBlock('mon')}
-            nDays={7}
-            onEventPress={onEventPress}
-            locale="en"
-            timeStep={60}
-            styles={timetableStyles}
-        />
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={() => navigation.navigate('AddEvent')}>
+            <Ionicons name="add" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Account')}>
+            <Ionicons name="person" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
 
-        <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Main')}>
-            <Ionicons name="calendar" size={24} color="white" />
-            <Text style={styles.navText}>Schedule</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Review')}>
-            <Ionicons name="search" size={24} color="white" />
-            <Text style={styles.navText}>Post</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Review')}>
-            <Ionicons name="chatbubble" size={24} color="white" />
-            <Text style={styles.navText}>Review</Text>
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity style={styles.fab}>
-          <Ionicons name="share" size={24} color="white" />
+      <CustomHeader
+        currentDate={adjustedDate}
+        onHeaderDatePress={onHeaderDatePress}
+      />
+      <TimeTableView
+        events={state.events}
+        pivotTime={9}
+        pivotEndTime={20}
+        pivotDate={genTimeBlock('mon')}
+        nDays={7}
+        onEventPress={onEventPress}
+        locale="en"
+        timeStep={60}
+        styles={timetableStyles}
+        disableDateSelection={true}
+      />
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Main')}>
+          <Ionicons name="calendar" size={24} color="white" />
+          <Text style={styles.navText}>Schedule</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Review')}>
+          <Ionicons name="search" size={24} color="white" />
+          <Text style={styles.navText}>Post</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('Review')}>
+          <Ionicons name="chatbubble" size={24} color="white" />
+          <Text style={styles.navText}>Review</Text>
         </TouchableOpacity>
       </View>
+
+      <TouchableOpacity style={styles.fab}>
+        <Ionicons name="share" size={24} color="white" />
+      </TouchableOpacity>
+    </View>
   );
 };
 
@@ -547,6 +287,14 @@ const timetableStyles = {
     height: 8,
     fontWeight: 'bold',
   },
+  timeTableCell: {
+    backgroundColor: 'white',
+    borderWidth: 0.5,
+    borderColor: '#E6E6E6'
+  },
+  timeTableCellToday: {
+    backgroundColor: '#F5F5F5'
+  }
 };
 
 const styles = StyleSheet.create({
